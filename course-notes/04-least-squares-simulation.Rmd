@@ -1,0 +1,90 @@
+---
+title: An R Markdown document converted from "course-notes/04-least-squares-simulation.ipynb"
+output: html_document
+---
+
+## Example to show least squares minimization
+
+This little example is meant as a way to show the least square really minimizes the criterion, $ \sum \left( Y - \hat{Y} \right)^2 $.
+
+In this example, we will generate some data so that we know what the truth is. Then, upon data generation, we will compute a bunch of different values for the linear slope and y-intercept. For each combination of the y-intercept and slope, I will compute the sum of squares error depicted above. 
+
+```{r}
+library(tidyverse)
+library(simglm)
+
+theme_set(theme_bw(base_size = 18))
+
+set.seed(2021)
+
+sim_arguments <- list(
+    formula = y ~ x,
+    fixed = list(x = list(var_type = 'continuous', mean = 100, sd = 20)),
+    error = list(variance = 100),
+    sample_size = 500,
+    reg_weights = c(5, .5)
+)
+
+sim_data <- simulate_fixed(data = NULL, sim_arguments) %>%
+  simulate_error(sim_arguments) %>%
+  generate_response(sim_arguments)
+
+head(sim_data)
+```
+
+```{r}
+library(ggformula)
+
+gf_point(y ~ x, data = sim_data, size = 4) %>%
+  gf_smooth(method = 'lm')
+```
+
+```{r}
+sim_lm <- lm (y ~ x, data = sim_data)
+coef(sim_lm)
+```
+
+```{r}
+y_intercept <- seq(0, 15, by = .25)
+slope <- seq(0, 1.5, by = .05)
+
+conditions <- rbind(expand.grid(y_intercept = y_intercept, 
+                          slope = slope),
+                          coef(sim_lm))
+
+tail(conditions)
+dim(conditions)
+```
+
+```{r}
+gf_point(y ~ x, data = sim_data, size = 4) %>%
+  gf_smooth(method = 'lm') %>%
+  gf_abline(slope = ~slope, intercept = ~y_intercept, data = slice(conditions, 1), linetype = 2, size = 2) %>%
+  gf_abline(slope = ~slope, intercept = ~y_intercept, data = slice(conditions, 855), linetype = 2, color = 'lightgreen', size = 2) %>%
+  gf_refine(coord_cartesian(xlim = c(0, 160), ylim = c(0, 120)))
+
+```
+
+```{r}
+sum_square_error <- function(conditions, sim_data) {
+    fitted <- conditions[['y_intercept']] + conditions[['slope']] * sim_data[['x']]
+
+    deviation <- sim_data[['y']] - fitted
+
+    sqrt((sum(deviation^2) / (nrow(sim_data) - 2)))
+}
+
+sum_square_error(conditions[1892, ], sim_data)
+summary(sim_lm)$sigma
+```
+
+```{r}
+library(future)
+
+plan(multicore)
+
+conditions$sse <- unlist(lapply(1:nrow(conditions), function(xx) sum_square_error(conditions[xx, ], sim_data)))
+
+head(conditions)
+```
+
