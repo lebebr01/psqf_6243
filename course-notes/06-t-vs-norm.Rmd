@@ -1,0 +1,42 @@
+---
+title: An R Markdown document converted from "course-notes/06-t-vs-norm.ipynb"
+output: html_document
+---
+
+# Comparing t-distribution with normal distribution
+
+This short set of notes will show some differences in the t-distribution with varying degrees of freedom with a normal distribution. This 
+
+```{r}
+df <- c(2, 10, 15, 20, 30, 50, 100, 1000)
+
+t_dist <- do.call('rbind', lapply(seq_along(df), function(xx) data.frame(value = seq(-5, 5, .01), density = dt(seq(-5, 5, .01), df = df[xx]), df = df[xx], normal = FALSE)))
+
+z_dist <- data.frame(value = seq(-5, 5, .01), density = dnorm(seq(-5, 5, .01)), normal = TRUE, df = 0)
+
+dist <- rbind(t_dist, z_dist)
+
+head(dist)
+```
+
+```{r}
+library(tidyverse)
+library(ggformula)
+library(patchwork)
+
+theme_set(theme_bw(base_size = 18))
+
+dist %>%
+filter(df %in% c(0, 2)) %>%
+gf_point(density ~ value, color = ~ normal, size = 1) %>%
+  gf_refine(theme(legend.position = 'none')) /
+dist %>%
+filter(df %in% c(0, 10)) %>%
+gf_point(density ~ value, color = ~ normal, size = 1) %>%
+  gf_refine(theme(legend.position = 'none')) / 
+  dist %>%
+filter(df %in% c(0, 100)) %>%
+gf_point(density ~ value, color = ~ normal, size = 1) %>%
+  gf_refine(theme(legend.position = 'none'))
+```
+
