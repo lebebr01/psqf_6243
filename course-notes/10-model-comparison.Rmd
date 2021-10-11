@@ -1,0 +1,126 @@
+---
+title: An R Markdown document converted from "course-notes/10-model-comparison.ipynb"
+output: html_document
+---
+
+# Model Comparison
+
+This section of multiple regression is going to explore model comparison, to guide the selection of the best fitting model from a set of competing models. 
+
+```{r}
+library(tidyverse)
+library(ggformula)
+
+theme_set(theme_bw(base_size = 18))
+
+college <- read_csv("https://raw.githubusercontent.com/lebebr01/statthink/main/data-raw/College-scorecard-4143.csv") %>%
+  mutate(act_mean = actcmmid - mean(actcmmid, na.rm = TRUE),
+         cost_mean = costt4_a - mean(costt4_a, na.rm = TRUE)) %>%
+  drop_na(act_mean, cost_mean)
+
+head(college)
+dim(college)
+```
+
+```{r}
+adm_mult_reg <- lm(adm_rate ~ act_mean + cost_mean, data = college)
+
+summary(adm_mult_reg)
+```
+
+## Omnibus Hypothesis
+
+In linear regression, I omitted a portion of the output from above that typically comes with most statistical output. That is, there is a test statistic that aims to test if the model is explaining variation over and above a simple mean. More specifically, this omnibus hypothesis tests the following:
+
+$$ 
+H_{0}: All\ \beta = 0 \\[10pt]
+H_{A}: Any\ \beta \neq 0
+$$
+
+This hypothesis can be formally tested with an F-statistic which is distributed as an F distribution with $p$ predictor attributes and $n - p - 1$ degrees of freedom. 
+
+```{r}
+f_data <- data.frame(value = seq(0, 5, by = .01)) %>%
+   mutate(dens = df(value, 2, 1278))
+
+gf_line(dens ~ value, data = f_data, size = 2)
+```
+
+```{r}
+f_data <- data.frame(value = seq(0, 5, by = .01)) %>%
+   mutate(dens = df(value, 5, 50))
+
+gf_line(dens ~ value, data = f_data, size = 2)
+```
+
+## Adjusted R-squared
+The adjusted R-squared is typically used when comparing models. This statistic is commonly used as R-square represents the ratio between explained and total variance, therefore, this will always increase, even if the new attribute entered is not helpful. The adjusted R-squared tries to adjust for model complexity. There are many ways to do this, but the most common will be defined here.
+
+$$
+\bar{R}^2 = 1 - (1 - R^2) \frac{n - 1}{n - p - 1}
+$$
+
+or 
+
+$$ 
+\bar{R}^2 = 1 - \frac{SS_{res} / df_{e}}{SS_{tot} / df_{t}}
+$$
+where $p$ is the number of predictors (excluding the intercept), $n$ is the sample size, $SS_{e}$ and $$SS_{tot}$ are sum of square residual and total respectively, and $df_{e}$ and $df_{t}$ are degrees of freedom for the error ($n - p - 1$) and total ($n - 1$) respectively. 
+
+```{r}
+summary(adm_mult_reg)
+```
+
+```{r}
+1 - (1 - .1836) * (1281 - 1) / (1281 - 2 - 1)
+```
+
+```{r}
+anova(adm_mult_reg)
+```
+
+```{r}
+1 - (42.01 / 1278) / ((8.39 + 1.066 + 42.014) / 1280)
+```
+
+## Model Comparison
+
+There are a variety of statistics used to provide statistical evidence for competing models. If the models are nested, then the variance decomposition can be used to determine if the added predictors helped to explain significant variation over and above the simpler model. 
+
+In this situation, another F statistic can be derived where 
+
+$$
+F = \frac{SS_{res}^{R} - SS_{res}^{F} / \Delta p}{SS_{res}^{F} / df_{F}}
+$$
+
+```{r}
+act_lm <- lm(adm_rate ~ act_mean, data = college)
+
+summary(act_lm)
+```
+
+```{r}
+anova(act_lm, adm_mult_reg)
+```
+
+```{r}
+((43.08 - 42.01) / 1)
+```
+
+```{r}
+1.07 / (42.01 / 1278)
+```
+
+### Non-nested models
+
+For non-nested models, the F-statistic defined above will not work. Instead other statistics are needed to evaluate which model is the best. The one that I prefer for this is the AIC (Akaike information criteria) or the related small sample form, AICc. The equations for these aren't all that useful, utilizing software is the best way to compute these statistics. In general, smaller AIC values indicate a better fitting model. 
+
+```{r}
+library(AICcmodavg)
+
+cost_lm <- lm(adm_rate ~ cost_mean, data = college)
+
+aictab(list(cost_lm, act_lm), 
+       modnames = c('cost', 'act'))
+```
+
