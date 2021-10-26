@@ -1,0 +1,166 @@
+---
+title: An R Markdown document converted from "course-notes/13-regression-categorical-p2.ipynb"
+output: html_document
+---
+
+# Regression with Categorical Predictors - Part 2
+
+First, I want to build off of the first part of the notes on regression with categorical predictors. Before generalizing to more than two groups, let's first explore what happens when values other than 0/1 are used for the categorical attribute. The following three dummy/indicator attributes will be used:
+
+1. 1 = NL, 0 = AL
+2. 1 = NL, 2 = AL
+3. 100 = NL, 0 = AL
+
+Make some predictions about what you think will happen in the three separate regressions?
+
+```{r}
+library(tidyverse)
+library(Lahman)
+library(ggformula)
+
+theme_set(theme_bw(base_size = 18))
+
+career <- Batting %>%
+  filter(AB > 100) %>%
+  anti_join(Pitching, by = "playerID") %>%
+  filter(yearID > 1990) %>%
+  group_by(playerID, lgID) %>%
+  summarise(H = sum(H), AB = sum(AB)) %>%
+  mutate(average = H / AB)
+
+career <- Master %>%
+  tbl_df() %>%
+  dplyr::select(playerID, nameFirst, nameLast) %>%
+  unite(name, nameFirst, nameLast, sep = " ") %>%
+  inner_join(career, by = "playerID") %>%
+  dplyr::select(-playerID)
+
+career <- career %>%
+  mutate(league_dummy = ifelse(lgID == 'NL', 1, 0),
+         league_dummy_12 = ifelse(lgID == 'NL', 1, 2),
+         league_dummy_100 = ifelse(lgID == 'NL', 100, 0))
+
+head(career, n = 10)
+```
+
+```{r}
+average_lm <- lm(average ~ league_dummy, data = career)
+
+broom::tidy(average_lm)
+```
+
+```{r}
+average_lm_12 <- lm(average ~ league_dummy_12, data = career)
+
+broom::tidy(average_lm_12)
+```
+
+```{r}
+average_lm_100 <- lm(average ~ league_dummy_100, data = career)
+
+broom::tidy(average_lm_100)
+```
+
+Before moving to more than 2 groups, any thoughts on how we could run a one-sample t-test using a linear regression? For example, suppose this null hypothesis wanted to be explored.
+
+$$
+H_{0}: \mu_{BA} = .2
+$$
+
+$$ 
+H_{A}: \mu_{BA} \neq .2
+$$
+
+## Generalize to more than 2 groups
+
+The ability to use regression with categorical attributes of more than 2 groups is possible and an extension of the 2 groups model shown above. First, let's think about how we could represent three categories as numeric attributes. Suppose we had the following 4 categories of baseball players.
+
+| Position | 
+|:---------| 
+| Outfield | 
+| Infield  | 
+| Catcher  |
+| Designated Hitter  |
+
+```{r}
+library(GeomMLBStadiums)
+
+ggplot() + 
+  geom_mlb_stadium(stadium_segments = "all") + 
+  facet_wrap(~team) + 
+  coord_fixed() + 
+  theme_void()
+```
+
+```{r}
+library(tidyverse)
+library(Lahman)
+library(ggformula)
+
+theme_set(theme_bw(base_size = 18))
+
+career <- Batting %>%
+  filter(AB > 100) %>%
+  anti_join(Pitching, by = "playerID") %>%
+  filter(yearID > 1990) %>%
+  group_by(playerID, lgID) %>%
+  summarise(H = sum(H), AB = sum(AB)) %>%
+  mutate(average = H / AB)
+
+career <- Appearances %>%
+  filter(yearID > 1990) %>%
+  select(-GS, -G_ph, -G_pr, -G_batting, -G_defense, -G_p, -G_lf, -G_cf, -G_rf) %>%
+  rowwise() %>%
+  mutate(g_inf = sum(c_across(G_1b:G_ss))) %>%
+  select(-G_1b, -G_2b, -G_3b, -G_ss) %>%
+  group_by(playerID, lgID) %>%
+  summarise(catcher = sum(G_c),
+            outfield = sum(G_of),
+            dh = sum(G_dh),
+            infield = sum(g_inf),
+            total_games = sum(G_all)) %>%
+  pivot_longer(catcher:infield,
+               names_to = "position") %>%
+  filter(value > 0) %>%
+  group_by(playerID, lgID) %>%
+  slice_max(value) %>%
+  select(playerID, lgID, position) %>%
+  inner_join(career)
+
+career <- Master %>%
+  tbl_df() %>%
+  dplyr::select(playerID, nameFirst, nameLast) %>%
+  unite(name, nameFirst, nameLast, sep = " ") %>%
+  inner_join(career, by = "playerID")
+
+career <- career %>%
+  mutate(league_dummy = ifelse(lgID == 'NL', 1, 0))
+
+count(career, position)
+```
+
+```{r}
+gf_violin(position ~ average, data = career, fill = 'gray85', draw_quantiles = c(0.1, 0.5, 0.9)) %>%
+  gf_labs(x = "Batting Average",
+          y = "")
+```
+
+```{r}
+career <- career %>%
+  mutate(outfield = ifelse(position == 'outfield', 1, 0),
+         infield = ifelse(position == 'infield', 1, 0),
+         catcher = ifelse(position == 'catcher', 1, 0))
+
+head(career)
+```
+
+```{r}
+position_lm <- lm(average ~ 1 + outfield + infield + catcher, data = career)
+
+broom::tidy(position_lm)
+```
+
+```{r}
+df_stats(average ~ position, data = career, mean)
+```
+
