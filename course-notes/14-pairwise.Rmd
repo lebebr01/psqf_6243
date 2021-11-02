@@ -1,0 +1,180 @@
+---
+title: An R Markdown document converted from "course-notes/14-pairwise.ipynb"
+output: html_document
+---
+
+# More details on pairwise contrasts
+
+Last week the idea of pairwise contrasts were introduced. Here is a more formal discussion of pairwise contrasts and controlling of familywise type I error rates. 
+
+## Bonferroni Method
+
+This method is introduced first, primarily due to its simplicity. This is not the best measure to use however as will be discussed below. The Bonferroni method makes the following adjustment:
+
+$$ 
+\alpha_{new} = \frac{\alpha}{m}
+$$
+
+Where $m$ is the number of hypotheses being tested. Let's use a specific example to frame this based on the baseball data. 
+
+```{r}
+library(tidyverse)
+library(Lahman)
+library(ggformula)
+
+theme_set(theme_bw(base_size = 18))
+
+career <- Batting %>%
+  filter(AB > 100) %>%
+  anti_join(Pitching, by = "playerID") %>%
+  filter(yearID > 1990) %>%
+  group_by(playerID, lgID) %>%
+  summarise(H = sum(H), AB = sum(AB)) %>%
+  mutate(average = H / AB)
+
+career <- Appearances %>%
+  filter(yearID > 1990) %>%
+  select(-GS, -G_ph, -G_pr, -G_batting, -G_defense, -G_p, -G_lf, -G_cf, -G_rf) %>%
+  rowwise() %>%
+  mutate(g_inf = sum(c_across(G_1b:G_ss))) %>%
+  select(-G_1b, -G_2b, -G_3b, -G_ss) %>%
+  group_by(playerID, lgID) %>%
+  summarise(catcher = sum(G_c),
+            outfield = sum(G_of),
+            dh = sum(G_dh),
+            infield = sum(g_inf),
+            total_games = sum(G_all)) %>%
+  pivot_longer(catcher:infield,
+               names_to = "position") %>%
+  filter(value > 0) %>%
+  group_by(playerID, lgID) %>%
+  slice_max(value) %>%
+  select(playerID, lgID, position) %>%
+  inner_join(career)
+
+career <- Master %>%
+  tbl_df() %>%
+  dplyr::select(playerID, nameFirst, nameLast) %>%
+  unite(name, nameFirst, nameLast, sep = " ") %>%
+  inner_join(career, by = "playerID")
+
+career <- career %>%
+  mutate(league_dummy = ifelse(lgID == 'NL', 1, 0))
+
+head(career)
+```
+
+```{r}
+
+position_lm <- lm(average ~ 1 + position, data = career)
+
+broom::tidy(position_lm)
+```
+
+```{r}
+count(career, position)
+```
+
+Given that there are 4 groups, if all pairwise comparisons were of interest, the following would be all possible **NULL** hypotheses. Note, I am assuming that each of these has a matching alternative hypothesis that states the groups differences are *different* from 0.
+
+$$
+H_{0}: \mu_{catcher} - \mu_{dh} = 0 \\
+H_{0}: \mu_{catcher} - \mu_{infield} = 0 \\
+H_{0}: \mu_{catcher} - \mu_{outfield} = 0 \\
+H_{0}: \mu_{dh} - \mu_{infield} = 0 \\
+H_{0}: \mu_{dh} - \mu_{outfield} = 0 \\
+H_{0}: \mu_{infield} - \mu_{outfield} = 0 \\
+$$
+
+In general, to find the total number of hypotheses, you can use the combinations formula:
+
+$$
+C(n, r) = \binom(n, r) = \frac{n!}{r!(n - r)!}
+$$
+
+For our example this would lead to:
+
+$$
+\binom(4, 2) = \frac{4!}{2!(4 - 2)!} = \frac{4 * 3 * 2 * 1}{2 * 1 * (2 * 1)} = \frac{24}{4} = 6
+$$
+
+Therefore, using bonferroni's correction, our new alpha would be:
+
+$$
+\alpha_{new} = \frac{.05}{6} = .0083
+$$
+
+Alternatively, you could also adjust the p-values to make them smaller and still use .05 (or any other predetermined familywise $\alpha$ value).
+
+$$
+p_{new} = \frac{p_{original}}{m}
+$$
+
+This is what most software programs do automatically for you. 
+
+```{r}
+pairwise.t.test(career$average, career$position, p.adjust = 'bonf')
+```
+
+## What is a type I error?
+
+Before moving to why you should care, let's more formally talk about type I errors. Suppose we have the following table of possible outcomes:
+
+|                | $H_{0}$ true | $H_{0}$ false | 
+|:---------------|-------------:|--------------:|
+| Reject $H_{0}$ | Type I Error ($\alpha$) | Correct - Power ($1 - \beta$)    | 
+| Retain $H_{0}$ | Correct  ($1 - \alpha$)    | Type II Error ($\beta$) |
+
+**Type I error** is when the null hypothesis is true in the population, but the statistical evidence *supports the alternative hypothesis*. 
+**Type II error** is when the null hypothesis is false in the population, but the statistical evidence *supports the null hypothesis*. 
+
+Here is a good link for an interactive app that shows many of these terms visually: https://rpsychologist.com/d3/nhst/. 
+
+## Holm-Bonferroni Procedure
+
+The boneferroni procedure will be overly conservative and I wouldn't recommend it's use in practice. If you want a simple approach to p-value adjustment, I'd recommend just setting a specific value for the alpha value to be more conservative, for example setting it to 0.01. 
+
+The Holm-Bonferroni approach is an adjustment method that is more powerful then the original bonferroni procedure, but does not come with onerous assumptions. The Holm-Boneferroni procedure uses the following steps for adjustment. 
+
+Suppose there are $m$ p-values (ie, $m$ null hypotheses). First, order these from smallest to largest, be sure to keep track of which hypothese the p-value is associated with. Then, 
+1. Is the smallest p-value **less than** $\alpha / m$, if yes, provide evidence for the alternative hypothesis and proceed to the next p-value, it not stop.
+2. Is the second smallest p-value **less than** $ \alpha / m - 1$, if eys, provide evidence for the alternative hypothesis and proceed to the next p-value, if not stop.
+3. Continue, comparing the p-values in order to the following adjust alpha, 
+
+$$
+\alpha_{new}_{k} = \frac{\alpha}{m + 1 - k}
+$$
+
+where is $k$ is the rank of the p-values when ordered from smallest to largest. 
+
+Similar to the bonferroni, the p-values can be adjusted with the following formula: 
+
+$$
+p_{adj} = min(1, max((m + 1 - k) * p_{k} ))
+$$
+
+where is $k$ is the rank of the p-values when ordered from smallest to largest. 
+
+```{r}
+pairwise.t.test(career$average, career$position, p.adjust = 'holm')
+```
+
+```{r}
+pairwise.t.test(career$average, career$position, p.adjust = 'none')$p.value
+```
+
+```{r}
+pairwise.t.test(career$average, career$position, p.adjust = 'none')$p.value[3] * (6 + 1 - 1)
+pairwise.t.test(career$average, career$position, p.adjust = 'none')$p.value[2] * (6 + 1 - 2)
+pairwise.t.test(career$average, career$position, p.adjust = 'none')$p.value[1] * (6 + 1 - 3)
+pairwise.t.test(career$average, career$position, p.adjust = 'none')$p.value[9] * (6 + 1 - 4)
+pairwise.t.test(career$average, career$position, p.adjust = 'none')$p.value[5] * (6 + 1 - 5)
+pairwise.t.test(career$average, career$position, p.adjust = 'none')$p.value[6] * (6 + 1 - 6)
+```
+
+## Exploring assumptions for model with categorical attributes
+
+```{r}
+plot(position_lm, which = 1:5)
+```
+
