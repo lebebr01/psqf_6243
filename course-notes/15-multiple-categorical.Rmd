@@ -1,0 +1,125 @@
+---
+title: An R Markdown document converted from "/Users/bleb/OneDrive - University of
+  Iowa/Courses/Uiowa/psqf_6243/course-notes/15-multiple-categorical.ipynb"
+output: html_document
+---
+
+# Add more than one categorical predictor
+
+Let's explore the ability to add more than one categorical predictor to our model. This will then build into thinking through interactions. Let's load some new data. These are bike data from Philadelphia program, called [Indego](https://www.rideindego.com/about/data/). The data loaded below are from Q3 of 2021. 
+
+Here is information about the columns in the data.
+
++ **trip_id:** Locally unique integer that identifies the trip
++ **duration:** Length of trip in minutes
++ **start_time:** The date/time when the trip began, presented in ISO 8601 format in local time
++ **end_time:** The date/time when the trip ended, presented in ISO 8601 format in local time
++ **start_station:** The station ID where the trip originated (for station name and more information on each station see the Station Table)
++ **start_lat:** The latitude of the station where the trip originated
++ **start_lon:** The longitude of the station where the trip originated
++ **end_station:** The station ID where the trip terminated (for station name and more information on each station see the Station Table)
++ **end_lat:** The latitude of the station where the trip terminated
++ **end_lon:** The longitude of the station where the trip terminated
++ **bike_id:**  Locally unique integer that identifies the bike
++ **plan_duration:** The number of days that the plan the passholder is using entitles them to ride; 0 is used for a single ride plan (Walk-up)
++ **trip_route_category:** “Round Trip” for trips starting and ending at the same station or “One Way” for all other trips
++ **passholder_type:** The name of the passholder’s plan
++ **bike_type:** The kind of bike used on the trip, including standard pedal-powered bikes or electric assist bikes
+
+```{r}
+library(tidyverse)
+library(ggformula)
+
+theme_set(theme_bw(base_size = 18))
+
+temp <- tempfile()
+download.file("https://u626n26h74f16ig1p3pt0f2g-wpengine.netdna-ssl.com/wp-content/uploads/2021/10/indego-trips-2021-q3.zip", temp)
+bike <- readr::read_csv(unz(temp, "indego-trips-2021-q3.csv")) %>%
+   filter(duration <= 120 & passholder_type != 'Walk-up')
+unlink(temp)
+
+head(bike)
+dim(bike)
+```
+
+Suppose we were interested in the following research questions. 
+
++ Does the trip route, type of pass, and bike type explain variation in the duration the bike was rented?
+
+Let's explore this descriptively. 
+
+```{r}
+gf_density(~ duration, data = bike) %>%
+  gf_labs(x = "Duration, in minutes")
+```
+
+```{r}
+gf_violin(bike_type ~ duration, data = bike, fill = 'gray85', draw_quantiles = c(0.1, 0.5, 0.9)) %>%
+  gf_labs(x = "Duration, in minutes", y = "") 
+```
+
+```{r}
+gf_violin(passholder_type ~ duration, data = bike, fill = 'gray85', draw_quantiles = c(0.1, 0.5, 0.9)) %>%
+  gf_labs(x = "Duration, in minutes", y = "") 
+```
+
+```{r}
+gf_violin(trip_route_category ~ duration, data = bike, fill = 'gray85', draw_quantiles = c(0.1, 0.5, 0.9)) %>%
+  gf_labs(x = "Duration, in minutes", y = "") 
+```
+
+## Regression model with multiple categorical predictors
+
+Similar to multiple linear regression, including multiple categorical predictors is similar to that case. The simplest model is the additive model, also commonly referred to as the main effect model. Let's start with two categorical attributes that take on two different values. 
+
+$$
+duration = bike\_type + trip\_route\_category + \epsilon
+$$
+
+```{r}
+bike_lm <- lm(duration ~ bike_type + trip_route_category, data = bike)
+
+broom::glance(bike_lm)
+broom::tidy(bike_lm)
+```
+
+```{r}
+two_way_predict <- broom::augment(bike_lm) %>%
+   distinct(bike_type, trip_route_category, .fitted)
+
+two_way_predict
+```
+
+```{r}
+mean_duration <- df_stats(duration ~ bike_type + trip_route_category, data =bike, mean, length)
+mean_duration
+```
+
+```{r}
+gf_point(.fitted ~ bike_type, color = ~ trip_route_category, data = two_way_predict, size = 5) %>%
+  gf_line(size = 1.5, group = ~ trip_route_category) %>%
+  gf_labs(x = "", y = "Model Predicted Values", color = 'Trip Route') %>%
+  gf_point(mean ~ bike_type, color = ~ trip_route_category, data = mean_duration, shape = 15, size = 5)
+```
+
+```{r}
+bike_lm_int <- lm(duration ~ bike_type + trip_route_category + bike_type:trip_route_category, data = bike)
+
+broom::glance(bike_lm_int)
+broom::tidy(bike_lm_int)
+```
+
+```{r}
+two_way_predict_int <- broom::augment(bike_lm_int) %>%
+   distinct(bike_type, trip_route_category, .fitted)
+
+two_way_predict_int
+```
+
+```{r}
+gf_point(.fitted ~ bike_type, color = ~ trip_route_category, data = two_way_predict_int, size = 5) %>%
+  gf_line(size = 1.5, group = ~ trip_route_category) %>%
+  gf_labs(x = "", y = "Model Predicted Values", color = 'Trip Route') %>%
+  gf_point(mean ~ bike_type, color = ~ trip_route_category, data = mean_duration, shape = 15, size = 5)
+```
+
