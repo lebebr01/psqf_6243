@@ -1,0 +1,190 @@
+---
+title: An R Markdown document converted from "course-notes/16-ancova.ipynb"
+output: html_document
+---
+
+# Analysis of Covariance 
+
+This section of notes will explore an analysis procedure classically known as Analysis of Covariance (ANCOVA). This methodology is aimed to answer the following question, *Is there a difference in groups, after controlling for other covariates*. Here, covariates refer to another attribute in the data that is thought to influence or explain variation in the outcome, therefore, this method is meant to remove, control, or partition the variance associated with the covariate (or multiple covariates) to evaluate the conditional or adjusted means.
+
+```{r}
+library(tidyverse)
+library(ggformula)
+library(broom)
+
+theme_set(theme_bw(base_size = 18))
+
+baby <- read_csv("https://raw.githubusercontent.com/lebebr01/statthink/main/data-raw/baby.csv") %>%
+   mutate(gestational_mean = gestational_days - mean(gestational_days),
+          maternal_weight_mean = maternal_pregnancy_weight - mean(maternal_pregnancy_weight),
+          maternal_age_mean = maternal_age - mean(maternal_age),
+          maternal_height_mean = maternal_height - mean(maternal_height))
+
+head(baby)
+```
+
+Let's first explore the model that only includes gestational days in the model, that is, this is a simple linear regression model. *Note*: I mean centered gestational days for this model. 
+
+$$
+weight = \beta_{0} + \beta_{1} days + \epsilon
+$$
+
+```{r}
+baby_lm <- lm(birth_weight ~ gestational_mean, data = baby)
+
+glance(baby_lm)
+tidy(baby_lm)
+```
+
+Let's next explore another simple linear regression model that only includes whether a mother smoked or not. This model is:
+
+$$
+weight = \beta_{0} + \beta_{2} smoker + \epsilon
+$$
+
+```{r}
+baby_smoker <- lm(birth_weight ~ maternal_smoker, data = baby)
+
+glance(baby_smoker)
+tidy(baby_smoker)
+```
+
+The idea behind ANCOVA is that we know that gestational days is an important predictor in understanding variation in the birth weight of the baby. This may not be a predictor that is of most interest to our research question of knowing whether or not there are differences in birth weight between those that smoked vs did not smoke when the baby was in the womb. There may be some sampling bias occurring, that is, those that smoked may have fewer gestational days compared to those that did not smoke. This fact may drive the differences in the mean difference of birth weight. As a results, we would want to adjust for the effect of gestational days prior to evaluating the mean difference of smoker status. 
+
+Below is a descriptive figure trying to show the relationship between birth weight and gestational days by smoker status. 
+
+```{r}
+gf_point(birth_weight ~ gestational_days, data = baby, color = ~maternal_smoker, size = 4) %>%
+  gf_smooth(method = 'lm', size = 1)
+```
+
+Below, let's fit the traditional ANCOVA model, that contains a single continuous covariate (gestational days) and the categorical predictor. The model would be:
+
+$$
+weight = \beta_{0} + \beta_{1} days + \beta_{2} smoker + \epsilon
+$$
+
+```{r}
+baby_ancova <- lm(birth_weight ~ gestational_mean + maternal_smoker, data = baby)
+
+glance(baby_ancova)
+tidy(baby_ancova)
+```
+
+The model above can be partioned to better show the specific terms in the model. 
+
+$$
+weight_{smoker} = (\beta_{0} + \beta_{2}) + \beta_{1} days + \epsilon
+$$
+
+$$
+weight_{non-smoker} = \beta_{0} + \beta_{1} days + \epsilon
+$$
+
+More explicitly, the term, $\beta_{2}$ above reflects a mean level change on the intercept after controlling for the effects of gestational days.
+
+## Adjusted Means
+
+Let's compare the means from this ANCOVA model compared to the unconditional means.
+
+```{r}
+uncond_mean <- df_stats(birth_weight ~ maternal_smoker, data = baby, mean) %>%
+   mutate(maternal_smoker = as.character(maternal_smoker))
+
+cond_mean <- data.frame(maternal_smoker = c('FALSE', 'TRUE'), cond_mean = c(122.74, 122.74 - 8.37))
+
+combine_means <- full_join(uncond_mean, cond_mean)
+combine_means
+```
+
+Note, the conditional mean used the fact that the gestational days were mean centered, therefore, a value of 0 was included in the above equations. 
+
+## Interaction between continuous and categorical predictor
+
+One assumption in classical ANCOVA is to assume that the effect of the adjusting covariate is the same for each group. Although, this is a classical assumption, this is an empirical question that we can explore given the data. This can be explored by the introduction of an interaction. 
+
+This new model would be: 
+
+$$
+weight = \beta_{0} + \beta_{1} days + \beta_{2} smoker + \beta_{3} days:smoker + \epsilon
+$$
+
+where the $:$ in the equation above represents the interaction effect between gestational days and smoker status. An interaction is testing if the slope for gestational days is the same for those that smoke vs those that did not smoke. 
+
+More explicitly, we can partition the model above into the following two regression equations. 
+
+$$
+weight_{smoker} = (\beta_{0} + \beta_{2}) + (\beta_{1} + \beta_{3}) days + \epsilon
+$$
+
+$$
+weight_{non-smoker} = \beta_{0} + \beta_{1} days + \epsilon
+$$
+
+```{r}
+baby_lm_int <- lm(birth_weight ~ gestational_mean * maternal_smoker, data = baby)
+# baby_lm_int <- lm(birth_weight ~ gestational_mean + maternal_smoker + gestational_mean:maternal_smoker, 
+#    data = baby)
+
+glance(baby_lm_int)
+tidy(baby_lm_int)
+```
+
+What do the 4 terms represent now?
+
+1. $\beta_{0}$ is the intercept for the reference group (non-smokers) when all other attributes in the model are equal to 0. 
+2. $\beta_{1}$ is the slope for the reference group (non-smokers), controlling for the smoker status.
+3. $\beta_{2}$ is the average change for those that smoke, controlling for differences in gestational days.
+4. $\beta_{3}$ is the average slope difference for those that smoke compared to those that did not smoke. 
+
+Often, it is easier to combine the terms to be compared directly. For example, given the example above, we could combine $\beta_{0}$ and $\beta_{2}$ to get the estimated intercept for those that smoke. Then we could do something similar for the slope terms for those that smoke. 
+
+### Hypotheses being tested
+
+The hypotheses being tested here for the $\beta_{2}$ and $\beta_{3}$ are as follows:
+
+$$
+H_{0}: \beta_{2} = 0
+$$
+
+and 
+
+$$ 
+H_{0}: \beta_{3} = 0
+$$
+
+These can be a little bit untenable, therefore stating them in words can help. 
+
++ $H_{0}: \beta_{2} = 0$, is really testing, is there a mean difference between the reference and focal groups, controlling for the other terms in the model. This is inherently a conditional or adjusted means question. 
++ $H_{0}: \beta_{3} = 0$, is really testing, is there a slope difference comparing the focal and reference groups, controlling for other terms in the model. 
+
+## Including more than 1 covariate to adjust/condition
+
+It is also possible to adjust for more than one covariate. For example, maybe we thought adjusting for the weight, height, and age of the mother would also be a good idea. This can be done to remove any variation associated with that attribute prior to making exploring the mean difference in the attributes of interest. 
+
+This model would now be:
+
+$$
+weight = \beta_{0} + \beta_{1} days + \beta_{4} mother\_weight + \beta_{5} mother\_height + \beta_{6} mother\_age + \beta_{2} smoker + \beta_{3} days:smoker + \epsilon
+$$
+
+These can also be partitioned into two separate equations. 
+
+$$
+weight_{smoker} = (\beta_{0} + \beta_{2}) + (\beta_{1} + \beta_{3}) days + \beta_{4} mother\_weight + \beta_{5} mother\_height + \beta_{6} mother\_age + \epsilon
+$$
+
+$$
+weight_{non-smoker} = \beta_{0} + \beta_{1} days + \beta_{4} mother\_weight + \beta_{5} mother\_height + \beta_{6} mother\_age + \epsilon
+$$
+
+```{r}
+baby_lm_int_w <- lm(birth_weight ~ gestational_mean + maternal_pregnancy_weight + maternal_height + maternal_age + maternal_smoker + gestational_mean:maternal_smoker, 
+    data = baby)
+
+glance(baby_lm_int_w)
+tidy(baby_lm_int_w)
+```
+
+How could the appropriate conditional means be computed here? Also, what happened to the intercept in this model, why is it so small?
+
