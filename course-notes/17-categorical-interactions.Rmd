@@ -1,0 +1,195 @@
+---
+title: An R Markdown document converted from "course-notes/17-categorical-interactions.ipynb"
+output: html_document
+---
+
+# Interactions between categorical predictors
+
+Often, with multiple categorical predictors, it is of interest to explore interactions. But these terms can be somewhat difficult to interpret, this section of notes will explore those types of interactions in more detail. 
+
+## Multiple Categorical Attributes
+
+Let's go back to the [Indego data](https://www.rideindego.com/about/data/) from Q3 of 2021. Recall, this is the model that we first explored that did not have an interaction between them. Here is this model in equation form:
+
+$$
+duration = \beta_{0} + \beta_{1} bike\_type + \beta_{2} trip\_route\_category + \epsilon
+$$
+
+```{r}
+library(tidyverse)
+library(ggformula)
+library(broom)
+
+theme_set(theme_bw(base_size = 18))
+
+temp <- tempfile()
+download.file("https://u626n26h74f16ig1p3pt0f2g-wpengine.netdna-ssl.com/wp-content/uploads/2021/10/indego-trips-2021-q3.zip", temp)
+bike <- readr::read_csv(unz(temp, "indego-trips-2021-q3.csv")) %>%
+   filter(duration <= 120 & passholder_type != 'Walk-up')
+unlink(temp)
+
+bike_lm <- lm(duration ~ bike_type + trip_route_category, data = bike)
+
+tidy(bike_lm)
+```
+
+Recall, that these data are unbalanced, therefore there is more data for those that have standard bikes and are one-way trips. We can formally see that with the following code chunk. The unbalanced nature is particularly large for the one way vs round trip groups.
+
+```{r}
+count(bike, bike_type)
+count(bike, trip_route_category)
+```
+
+## What is meant my marginal/adjusted means?
+
+What exactly do I mean when I say marginal or adjusted means? To explore this, let's look at the table of means for all possible combinations of the two categorical attributes above. 
+
+```{r}
+df_stats(duration ~ bike_type + trip_route_category, data = bike, mean) %>%
+  pivot_wider(names_from = 'trip_route_category', values_from = "mean")
+```
+
+Marginal means are the mean for one of the margins of the 2x2 table above. For example, to compute the marginal means for bike type attribute using the table above, we could do the following:
+
+$$
+\bar{electric} = \frac{(15.21 + 19.5)}{2} = 17.365
+$$
+
+and 
+
+$$
+\bar{standard} = \frac{(15.17 + 24.19)}{2} = 19.68
+$$
+
+However, this is only true if the design is balanced. Since the data are unbalanced, this needs to be taken into account when doing the analysis and is what the regression analysis above is doing above. This is also sometimes referred to as **Estimated Marginal Means**. In R, these can be obtained with the `emmeans` package and generally with the `emmeans()` function.
+
+```{r}
+library(emmeans)
+
+summary(emmeans(bike_lm, "bike_type"))
+```
+
+Note, that the Estimated Marginal Means here are the same as the regression coefficient estimated above:
+
+$$
+18.93446 - 18.55949 = 0.375
+$$
+
+This can also be done for the trip route category attribute.
+
+```{r}
+summary(emmeans(bike_lm, "trip_route_category"))
+```
+
+Again, this is the same as the regression coefficient estimate above and represents the main effect of trip route on bike rental duration. 
+
+## Interaction plot
+
+To fully understand what these terms represent, an interaction type plot (there is no interaction yet) can be generated. First, the predicted values (model implied bike rental duration means for each group) are generated, then plotted. The raw means are also generated for the 4 possible combinations of the two attributes.
+
+```{r}
+two_way_predict <- broom::augment(bike_lm) %>%
+   distinct(bike_type, trip_route_category, .fitted)
+
+two_way_predict
+```
+
+```{r}
+mean_duration <- df_stats(duration ~ bike_type + trip_route_category, data =bike, mean, length)
+mean_duration
+```
+
+```{r}
+gf_point(.fitted ~ bike_type, color = ~ trip_route_category, data = two_way_predict, size = 5) %>%
+  gf_line(size = 1.5, group = ~ trip_route_category) %>%
+  gf_labs(x = "", y = "Model Predicted Values", color = 'Trip Route') %>%
+  gf_point(mean ~ bike_type, color = ~ trip_route_category, data = mean_duration, shape = 15, size = 5)
+```
+
+## First order (two-way) interaction effect
+
+Let's know explore if there is an interaction effect, the descriptive means shown in the figure above suggests there is some sort of interaction effect going on here. Let's fit that model.
+
+```{r}
+bike_lm_int <- lm(duration ~ bike_type + trip_route_category + bike_type:trip_route_category, data = bike)
+
+broom::glance(bike_lm_int)
+broom::tidy(bike_lm_int)
+```
+
+What do these coefficients mean? Let's first explore them visually and then see what these mean. 
+
+```{r}
+two_way_predict_int <- broom::augment(bike_lm_int) %>%
+   distinct(bike_type, trip_route_category, .fitted)
+
+two_way_predict_int
+```
+
+```{r}
+gf_point(.fitted ~ bike_type, color = ~ trip_route_category, data = two_way_predict_int, size = 5) %>%
+  gf_line(size = 1.5, group = ~ trip_route_category) %>%
+  gf_labs(x = "", y = "Model Predicted Values", color = 'Trip Route') %>%
+  gf_point(mean ~ bike_type, color = ~ trip_route_category, data = mean_duration, shape = 15, size = 5)
+```
+
+Back to the coefficients and what do these mean here. 
+
+```{r}
+broom::tidy(bike_lm_int)
+```
+
++ *Intercept*: The average bike rental duration for the reference group (electric bikes and one-way trips). 
++ *bike_typestandard*: This is like a slope, so for a one unit change in bike type (ie, moving from an electric bike to a standard bike), the estimated mean change in bike duration decreased by .05 minutes, holding other attributes constant.
++ *trip_route_categoryRound Trip*: This is again like a slope, for a one unit change in trip route (ie, moving from a one-way trip to a round trip), the estimated mean change in bike duraction increased by 4.3 minutes, holder other attributes constant.
++ *bike_typestandard:trip_route_categoryRound Trip*: This is the interaction effect and is the **additional** mean level change for standard bikes *and* round trips, holding other attributes constant.
+
+We can get the estimated means for the 4 groups as follows:
+
+$$
+\hat{\mu}_{elec-1way} = 15.2
+$$
+$$
+\hat{\mu}_{elec-RT} = 15.2 + 4.3
+$$
+$$
+\hat{\mu}_{stand-1way} = 15.2 - .05
+$$
+$$
+\hat{\mu}_{stand-RT} = 15.2 - 0.05 + 4.3 + 4.7
+$$
+
+## Second order (three-way) interaction
+
+The more attributes that interact with one another makes the model more complicated and difficult to interpret. Still, let's try a second order or three way interaction. 
+
+```{r}
+bike_lm_3way <- lm(duration ~ bike_type * trip_route_category * passholder_type, data = bike)
+
+broom::glance(bike_lm_3way)
+broom::tidy(bike_lm_3way)
+```
+
+Interpreting these coefficients can be challenging, visualizing them can be a more effective way to undersand the impact these may have. The following steps will be used to visualize these model results:
+
+1. Generate model-implied or predicted values for each combination of model values
+2. Plot those model implied means
+
+```{r}
+count(bike, passholder_type)
+```
+
+```{r}
+three_way_predict_int <- broom::augment(bike_lm_3way) %>%
+   distinct(bike_type, trip_route_category, passholder_type, .fitted)
+
+three_way_predict_int
+```
+
+```{r}
+gf_point(.fitted ~ bike_type, color = ~ trip_route_category, data = three_way_predict_int, size = 5) %>%
+  gf_line(size = 1.5, group = ~ trip_route_category) %>%
+  gf_facet_wrap(~ passholder_type) %>%
+  gf_labs(y = "", x = "Model Predicted Values", color = 'Trip Route')
+```
+
