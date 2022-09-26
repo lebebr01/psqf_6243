@@ -1,0 +1,215 @@
+---
+title: An R Markdown document converted from "course-notes/07-regression-assumptions.ipynb"
+output: html_document
+---
+
+# Conditions for Linear Regression
+
+The conditions surrounding linear regression typically surround the residuals. Residuals are defined as:
+
+$$ 
+Y - \hat{Y}
+$$
+
+These are the deviations in the observed scores from the predicted scores from the linear regression. Recall, through least square estimation that these residauls will sum to 0, therefore, their mean would also be equal to 0. However, there are certain conditions about these residuals that are made for the linear regression model to have the inferences be appropriate. We'll talk more about what the implications for violating these conditions will have on the linear regression model, but first, the conditions. 
+
+1. Approximately Normally distributed residuals
+2. Homogeneity of variance
+3. Uncorrelated residuals
+4. Error term is uncorrelated with the predictor attribute
+5. Linearity and additivity of the model. 
+
+Each of these will be discussed in turn. 
+
+Data conditions that are not directly testable: 
+
+1. Validity
+2. Representativeness
+
+## Approximately Normally distributed residuals
+
+The first assumption is that the residuals are at least approximately Normally distributed. This assumption is really only much of a concern when the sample size is small. If the sample size is larger, the Central Limit Thereom (CLT) states that the distribution of the statstics will be approximately normally distributed. The threshold for the CLT to be properly invoked is about 30. Larger then this, the residuals do not need to be approximately normally distributed. Even still, exploring the distribution of the residuals can still be helpful and can also be helpful to identify potential extreme values. 
+
+This example will make use of the air quality data one more time. 
+
+### Data
+The  data for this section of notes will explore data from the [Environmental Protection Agency on Air Quality](https://www.epa.gov/outdoor-air-quality-data) collected for the state of Iowa in 2021. The data are daily values for PM 2.5 particulates. The attributes included in the data are shown below with a short description.
+
+| Variable | Description | 
+|:---------|:------------|
+| date      | Date of observation |
+| id | Site ID |
+| poc | Parameter Occurrence Code (POC) |
+| pm2.5 | Average daily pm 2.5 particulate value, in (ug/m3; micrograms per meter cubed) |
+| daily_aqi | Average air quality index |
+| site_name | Site Name |
+| aqs_parameter_desc | Text Description of Observation |
+| cbsa_code | Core Based Statistical Area (CBSA) ID |
+| cbsa_name | CBSA Name |
+| county | County in Iowa |
+| avg_wind | Average daily wind speed (in knots) | 
+| max_wind | Maximum daily wind speed (in knots) | 
+| max_wind_hours | Time of maximum daily wind speed |
+
+
+#### Guiding Question
+How is average daily wind speed related to the daily air quality index?
+
+```{r}
+library(tidyverse)
+library(ggformula)
+library(mosaic)
+
+theme_set(theme_bw(base_size = 18))
+
+airquality <- readr::read_csv("https://raw.githubusercontent.com/lebebr01/psqf_6243/main/data/iowa_air_quality_2021.csv")
+wind <- readr::read_csv("https://raw.githubusercontent.com/lebebr01/psqf_6243/main/data/daily_WIND_2021-iowa.csv")
+
+airquality <- airquality %>%
+   left_join(wind, by = c('cbsa_name', 'date')) %>% 
+   drop_na()
+
+air_lm <- lm(daily_aqi ~ avg_wind, data = airquality)
+coef(air_lm)
+```
+
+The residuals can be saved with the `resid()` function. These can also be added to the original data, which are particularly helpful. 
+
+```{r}
+head(resid(air_lm))
+```
+
+```{r}
+airquality$residuals <- resid(air_lm)
+head(airquality)
+```
+
+```{r}
+gf_density(~ residuals, data = airquality) %>%
+  gf_labs(x = "Residuals")
+```
+
+```{r}
+ggplot(airquality, aes(sample = residuals)) + 
+  stat_qq(size = 5) + 
+  stat_qq_line(size = 2)
+```
+
+### Standardized Residuals
+
+Standardized residuals can be another way to explore the residuals. These will now be standardized to have a variance of 1, similar to that of a Z-score. These can be computed as:
+
+$$ 
+standardized\ residuals = \frac{\epsilon_{i}}{SD_{\epsilon}}
+$$
+
+Within R, these can be computed using the function `rstandard()`. Furthermore, these can be computed from another package called broom with the `augment()` function. 
+
+```{r}
+head(rstandard(air_lm))
+
+library(broom)
+
+resid_diagnostics <- augment(air_lm)
+head(resid_diagnostics)
+```
+
+```{r}
+gf_density(~ .std.resid, data = resid_diagnostics) %>%
+  gf_labs(x = "Standardized Residuals")
+```
+
+```{r}
+ggplot(resid_diagnostics, aes(sample = .std.resid)) + 
+  stat_qq(size = 5) + 
+  stat_qq_line(size = 2)
+```
+
+## Homogeneity of variance
+
+Homoegeneity of variance is an assumption that is of larger concern compared to normality of the residuals. Homoogeneity of variance is an assumption that states that the variance of the residuals are similar across the predicted or fitted values from the regression line. This assumption can be explored by looking at the residuals (standardized or raw residuals), by the fitted or predicted values. Within this plot, the range of residuals should be similar across the range of fitted or predicted values. 
+
+```{r}
+gf_point(.resid ~ .fitted, data = resid_diagnostics, size = 5, alpha = .15) %>%
+  gf_smooth(method = 'loess', size = 2) %>%
+  gf_labs(x = 'Fitted Values',
+          y = 'Residuals')
+```
+
+```{r}
+gf_point(.std.resid ~ .fitted, data = resid_diagnostics, size = 5, alpha = .15) %>%
+  gf_smooth(method = 'loess', size = 2) %>%
+  gf_labs(x = 'Fitted Values',
+          y = 'Standardized Residuals')
+```
+
+Another figure that can also be helpful for the homogeneity of variance assumption is one that rescales the residuals on the y-axis. The rescaling makes all the standardized residuals positive (takes the absolute value) and then takes the square root of this. 
+
+```{r}
+resid_diagnostics %>%
+  mutate(sqrt_abs_sresid = sqrt(abs(.std.resid))) %>%
+  gf_point(sqrt_abs_sresid ~ .fitted, size = 5, alpha = .15) %>%
+  gf_smooth(method = 'loess', size = 2) %>%
+  gf_labs(x = 'Fitted Values',
+          y = 'Sqrt Abs Standardized Residuals')
+```
+
+## Data with high leverage
+
+Data with high leverage are extreme values that may significantly impact the regression estimates. These statistics include extreme values for the outcome or predictor attributes. Cook's distance is one statistic that can help to identify points with high impact/leverage for the regression estimates. Cook's distance is a statistic that represents how much change there would be in the fitted values if the point was removed when estimating the regression coefficients. There is some disagreement between what type of thresholds to use for Cook's distance, but one rule of thumb is Cook's distance greater than 1. There has also been some research showing that Cook's distance follows an F-distribution, so a more specific value could be computed. The rule of thumb for greater than 1 comes from the F distribution for large samples. 
+
+```{r}
+resid_diagnostics %>%
+  mutate(obs_num = 1:n()) %>%
+  gf_col(.cooksd ~ obs_num, fill = 'black', color = 'black') %>%
+  gf_labs(x = "Observation Number",
+          y = "Cook's Distance")
+```
+
+Another leave one out statistic is the studentized deleted residuals. These are computed by removing a data point, refitting the regression model, then generate a predicted value for the X value for the data point removed. Then the residual is computed the same as before and is standardized like the standardized residuals above. The function in R to compute these is `rstudent()`.
+
+```{r}
+head(rstudent(air_lm))
+```
+
+```{r}
+airquality$student_residuals <- rstudent(air_lm)
+head(airquality)
+```
+
+```{r}
+airquality %>%
+  mutate(obs_num = 1:n()) %>%
+  gf_point(student_residuals ~ obs_num, size = 5, alpha = .15) %>%
+  gf_hline(yintercept = ~ 3, color = 'blue', size = 2) %>%
+  gf_labs(x = "Observation Number",
+          y = "Studentized Residuals")
+```
+
+Leverage can be another measure to help detect outliers in X values. The hat values that were computed from the `augment()` function above and can be interpreted as the distance the X scores are from the center of all X predictors. In the case of a single predictor, the hat values are the distance the X score is from the mean of X. The hat values will also sum up to the number of predictors and will always range between 0 and 1. 
+
+```{r}
+resid_diagnostics %>%
+  mutate(obs_num = 1:n()) %>%
+  gf_col(.hat ~ obs_num, fill = 'black', color = 'black') %>%
+  gf_labs(x = "Observation Number",
+          y = "Hat Values (leverage)")
+```
+
+```{r}
+plot(air_lm, which = 1:5)
+```
+
+## Solutions to overcome data conditions not being met
+
+There are some strategies that can be done when a variety of data conditions for linear regression have not been met. In general, the strategies stem around generalizing the model and adding some complexity. 
+
+The following are options that would be possible:
+
+1. Add interactions or other non-linear terms
+2. Use more complicated model 
+    + weighted least squares for homogeneity of variance concerns
+    + models that include measurement error
+    + mixed models for correlated data
+3. Transform the data.
+
