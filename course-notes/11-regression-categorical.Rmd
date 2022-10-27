@@ -140,7 +140,7 @@ career <- Batting %>%
   summarise(H = sum(H), AB = sum(AB)) %>%
   mutate(average = H / AB)
 
-career <- Master %>%
+career <- People %>%
   tbl_df() %>%
   dplyr::select(playerID, nameFirst, nameLast) %>%
   unite(name, nameFirst, nameLast, sep = " ") %>%
@@ -239,7 +239,7 @@ career <- Appearances %>%
   select(playerID, lgID, position) %>%
   inner_join(career)
 
-career <- Master %>%
+career <- People %>%
   tbl_df() %>%
   dplyr::select(playerID, nameFirst, nameLast) %>%
   unite(name, nameFirst, nameLast, sep = " ") %>%
