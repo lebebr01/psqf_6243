@@ -22,6 +22,9 @@ library(mosaic)
 
 theme_set(theme_bw(base_size = 16))
 
+# If you get errors, use this line of code too.
+# penguins <- readr::read_csv("https://raw.githubusercontent.com/allisonhorst/palmerpenguins/main/inst/extdata/penguins.csv")
+
 head(penguins)
 
 model_fit <- function(outcome, predictor, data = penguins) {
