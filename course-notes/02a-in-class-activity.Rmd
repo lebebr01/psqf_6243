@@ -1,0 +1,100 @@
+---
+title: An R Markdown document converted from "course-notes/02a-in-class-activity.ipynb"
+output: html_document
+---
+
+## In Class Activity - September 1, 2022
+
+This activity is meant to give you some exploration of topics within class. I've created the code for you to run the activity and explore some data. 
+
+The goals of this activity are as follows: 
+
+1. Explore what happens if the X and Y attributes are flipped in a linear regression. 
+    + What happens to the linear regression coefficient estimates (ie., the $\hat{\beta}$)?
+    + What happens to the sigma and R-Square statistics?
+2. Given what you find in #1, how do you decide which attribute should be an outcome (Y) vs a predictor (X)?
+
+```{r}
+library(tidyverse)
+library(palmerpenguins)
+library(ggformula)
+library(mosaic)
+
+theme_set(theme_bw(base_size = 16))
+
+head(penguins)
+
+model_fit <- function(outcome, predictor, data = penguins) {
+    formula <- as.formula(paste(outcome, predictor, sep = "~"))
+    model_out <- lm(formula, data = data)
+
+    model_coef <- data.frame(matrix(c(coef(model_out)), ncol = 2))
+    names(model_coef) <- c("Intercept", "Slope")
+
+    data.frame(model_coef, 
+    Rsquare = summary(model_out)$r.square,
+    sigma = summary(model_out)$sigma)
+}
+
+visualize_relationship <- function(outcome, predictor, data = penguins, 
+     add_regression_line = TRUE, add_smoother_line = FALSE) {
+    formula <- as.formula(paste(outcome, predictor, sep = "~"))
+
+    if(add_regression_line & !add_smoother_line) {
+        gf_point(gformula = formula, data = data, size = 4) |>
+          gf_smooth(method = 'lm', size = 1.5) |> print()
+    }
+    if(add_smoother_line & !add_regression_line) {
+        gf_point(gformula = formula, data = data, size = 4) |>
+          gf_smooth(method = 'loess', size = 1.5) |> print()
+    }
+    if(add_smoother_line & add_regression_line) {
+        gf_point(gformula = formula, data = data, size = 4) |>
+          gf_smooth(method = 'lm', size = 1.5) |>
+          gf_smooth(method = 'loess', size = 1.5, linetype = 2) |> print()
+    }
+}
+```
+
+## Compute Correlation
+
+The following code chunk can help you compute correlations between attributes. To use the function, you can replace "outcome" with an attribute name from the data above and "predictor" with another attribute above. 
+
+1. What happens when you flip the outcome / predictor outcomes when computing the correlation? Does the correlation change? Why or why not? 
+2. Given the correlation computed, how is it interpreted? 
+3. Given the correlation computed, what information would this tell us when we try estimate the regression coefficients below? 
+
+```{r}
+cor(outcome ~ predictor, data = penguins, use = 'complete.obs') |> round(3)
+```
+
+## Visualize bivariate distribution
+
+The following code creates a scatter plot showing the bivariate association between the two attributes entered. Example code is shown below as an example. You can replace the "outcome" and "predictor" with the two continuous attributes that you are interested in exploring. These need to be entered in quotations, either single or double are fine. You can also add a regression line or smoother line by specifying those arguments as either TRUE (ie., Yes) or FALSE (ie., No). 
+
+1. Does the association between the two attributes appear to be linear? 
+2. What happens to the association if you flip the predictor / outcome attributes? 
+3. How would you summarize the association in a few sentences? 
+
+```{r}
+visualize_relationship(outcome = 'bill_length_mm',
+          predictor = 'flipper_length_mm',
+          data = penguins,
+          add_regression_line = TRUE,
+          add_smoother_line = FALSE)
+```
+
+## Linear Regression Fitting
+
+Similar to the bivariate scatterplot, the following function was created to fit a linear regression and extract some information about the model. The output should include the Intercept, Slope, R-square, and sigma estimates. You can specify the outcome and predictor by replacing those as you did in the bivariate scatterplot above to reflect the attributes you are interested in exploring. 
+
+1. How are the 4 estimates interpreted, particularly in the context of the problem?
+2. What happens to the 4 estimates if you flip the outcome and predictor attributes? 
+    + Which one should truly be the outcome and what should guide this?
+
+```{r}
+model_fit(outcome = 'bill_length_mm',
+          predictor = 'flipper_length_mm',
+          data = penguins)
+```
+
