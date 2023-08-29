@@ -3,7 +3,7 @@ title: An R Markdown document converted from "course-notes/02a-in-class-activity
 output: html_document
 ---
 
-## In Class Activity - September 1, 2022
+## In Class Activity - August 29, 2023
 
 This activity is meant to give you some exploration of topics within class. I've created the code for you to run the activity and explore some data. 
 
